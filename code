@@ -1,0 +1,88 @@
+#include <Servo.h> // 1: library Servo untuk kontrol SG90
+Servo jemuran;    // 2: objek servo
+
+// Pins
+const int pinSensorDigital = 2; // 3: DO (digital output) dari modul raindrop
+const int pinSensorAnalog = A0; // 4: AO (analog output) dari modul raindrop (opsional)
+const int pinBuzzer = 8;        // 5: buzzer pasif
+const int pinLED = 11;          // 6: LED indikator (HIGH = nyala)
+const int pinServo = 10;        // 7: pin servo (PWM)
+
+// Posisi servo
+const int posBuka = 90;         // 8: posisi terbuka
+const int posTutup = 0;         // 9: posisi tertutup
+
+// Konfigurasi
+const bool sensorActiveLow = true;       // 10: true jika DO = LOW saat hujan
+const unsigned long buzzerDuration = 2000UL; // 11: lama bunyi buzzer saat hujan mulai (ms)
+const unsigned long debounceDelay = 200UL;   // 12: delay untuk debounce sensor (ms)
+
+// Variabel status
+bool isRaining = false;    
+bool lastDetected = false; 
+unsigned long lastChangeTime = 0; 
+unsigned long buzzerStart = 0;    
+bool buzzerOn = false;            
+
+void setup() {
+  Serial.begin(9600);
+  jemuran.attach(pinServo);
+  pinMode(pinSensorDigital, INPUT);
+  pinMode(pinLED, OUTPUT);
+
+  jemuran.write(posBuka);
+  digitalWrite(pinLED, LOW);
+
+  // Tes buzzer pasif
+  tone(pinBuzzer, 1000);
+  delay(2000);
+  noTone(pinBuzzer);
+  delay(500);
+}
+
+void loop() {
+  int analogVal = analogRead(pinSensorAnalog);
+  int digitalVal = digitalRead(pinSensorDigital);
+
+  bool detected = sensorActiveLow ? (digitalVal == LOW) : (digitalVal == HIGH);
+  unsigned long now = millis();
+
+  Serial.print("AO="); Serial.print(analogVal);
+  Serial.print(" DO="); Serial.print(digitalVal);
+  Serial.print(" -> detected="); Serial.println(detected);
+
+  if (detected != lastDetected) {
+    lastChangeTime = now;
+    lastDetected = detected;
+  }
+  else if (now - lastChangeTime >= debounceDelay) {
+    if (detected != isRaining) {
+      isRaining = detected;
+
+      if (isRaining) { 
+        Serial.println("Hujan mulai: menutup jemuran, LED ON, buzzer ON");
+        jemuran.write(posTutup);
+        digitalWrite(pinLED, HIGH);
+
+        tone(pinBuzzer, 1000); // bunyikan buzzer pasif
+        buzzerOn = true;
+        buzzerStart = now;
+      } else { 
+        Serial.println("Hujan berhenti: membuka jemuran, LED OFF, buzzer OFF");
+        jemuran.write(posBuka);
+        digitalWrite(pinLED, LOW);
+
+        noTone(pinBuzzer); // matikan buzzer pasif
+        buzzerOn = false;
+      }
+    }
+  }
+
+  // Matikan buzzer setelah durasi
+  if (buzzerOn && (now - buzzerStart >= buzzerDuration)) {
+    noTone(pinBuzzer);
+    buzzerOn = false;
+  }
+
+  delay(100);
+}
